@@ -11,5 +11,6 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.2.1
 	github.com/multiformats/go-multiaddr v0.1.1
 	github.com/robaho/fixed v0.0.0-20190722234118-4530cf6b4486
+	github.com/shopspring/decimal v0.0.0-20191009025716-f1972eb1d1f5 // indirect
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
 )

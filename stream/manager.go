@@ -1,8 +1,6 @@
 package stream
 
 import (
-	"bodychains/message"
-	"bufio"
 	"encoding/gob"
 	"log"
 	"sync"
@@ -13,6 +11,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"golang.org/x/net/context"
+
+	"bodychains/connection"
 
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -38,7 +38,7 @@ type StreamWrap struct {
 	Dec *gob.Decoder
 }
 
-type streamsMap map[peer.ID]*StreamWrap
+type StreamsMap map[peer.ID]*StreamWrap
 type ignoreMap map[peer.ID]struct{}
 
 // StreamsManager manages connections streams
@@ -46,7 +46,7 @@ type StreamsManager struct {
 	sync.Mutex
 
 	ignore     ignoreMap
-	list       streamsMap
+	list       StreamsMap
 	ctx        context.Context
 	host       host.Host
 	protoID    protocol.ID
@@ -60,7 +60,7 @@ type StreamsManager struct {
 func NewStreamsManager(ctx context.Context, host host.Host, proto protocol.ID, rendezvous string) *StreamsManager {
 	sm := StreamsManager{
 		ignore:     ignoreMap{},
-		list:       streamsMap{},
+		list:       StreamsMap{},
 		ctx:        ctx,
 		host:       host,
 		protoID:    proto,
@@ -93,6 +93,10 @@ func NewStreamsManager(ctx context.Context, host host.Host, proto protocol.ID, r
 	sm.dht = kademliaDHT
 
 	return &sm
+}
+
+func (sm *StreamsManager) GetStreams() StreamsMap {
+	return sm.list
 }
 
 // StartDiscover creates streams for a new found peers
@@ -188,53 +192,9 @@ func (sm *StreamsManager) makeStream(peerID peer.ID) {
 func (sm *StreamsManager) addStream(stream network.Stream) {
 	id := stream.Conn().RemotePeer()
 
-	//rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
-
 	if _, found := sm.list[id]; found {
 		return
 	}
 
-	wrap := &StreamWrap{
-		s: stream,
-
-		Enc: gob.NewEncoder(stream),
-		Dec: gob.NewDecoder(stream),
-
-		Read:  sync.Mutex{},
-		Write: sync.Mutex{},
-	}
-
-	sm.list[id] = wrap
-
-	go readData(sm, nil, stream.Conn().RemotePeer(), wrap)
-
-	sm.Pipe.OnConnect <- wrap
-}
-
-func readData(sm *StreamsManager, rw *bufio.ReadWriter, peerID peer.ID, stream *StreamWrap) {
-	for {
-		var header message.Header
-		err := stream.Dec.Decode(&header)
-
-		if err != nil {
-			// fmt.Println(err)
-			sm.closeByPeer(peerID)
-			return
-		}
-
-		ps := &PeerStream{
-			H:        &header,
-			Wrap:     stream,
-			ReadDone: make(chan Noop),
-		}
-
-		sm.Pipe.OnMessage <- ps
-
-		select {
-		case <-ps.ReadDone:
-		case <-sm.ctx.Done():
-			sm.closeByPeer(peerID)
-			return
-		}
-	}
+	sm.Pipe.OnConnect <- connection.New(stream)
 }

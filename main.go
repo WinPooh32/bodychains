@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bodychains/message"
 	"bodychains/stream"
 	"context"
 	"fmt"
@@ -9,34 +8,34 @@ import (
 	"os/signal"
 )
 
-func decodeGetChain(stream *stream.StreamWrap) (message.GetChainArgs, error) {
-	var getChain message.GetChainArgs
+// func decodeGetChain(stream *stream.StreamWrap) (message.GetChainArgs, error) {
+// 	var getChain message.GetChainArgs
 
-	dec := stream.Dec
-	err := dec.Decode(&getChain)
+// 	dec := stream.Dec
+// 	err := dec.Decode(&getChain)
 
-	return getChain, err
-}
+// 	return getChain, err
+// }
 
-func route(ps *stream.PeerStream) {
-	switch ps.H.Type {
-	case message.ReqChain:
-		getChain, err := decodeGetChain(ps.Wrap)
-		if err != nil {
-			fmt.Println(err)
-		}
+// func route(ps *stream.PeerStream) {
+// 	switch ps.H.Type {
+// 	case message.ReqChain:
+// 		getChain, err := decodeGetChain(ps.Wrap)
+// 		if err != nil {
+// 			fmt.Println(err)
+// 		}
 
-		fmt.Println(getChain)
+// 		fmt.Println(getChain)
 
-	case message.NotifyBeginChunk:
-	default:
-		fmt.Println("Unknown message type with id:", ps.H.Type)
-	}
+// 	case message.NotifyBeginChunk:
+// 	default:
+// 		fmt.Println("Unknown message type with id:", ps.H.Type)
+// 	}
 
-	ps.ReadDone <- stream.Noop{}
-}
+// 	ps.ReadDone <- stream.Noop{}
+// }
 
-// handler of incoming requests
+// handler of incoming connections
 func conworker(ctx context.Context, pipe stream.Pipe) {
 	for {
 		select {
@@ -46,14 +45,10 @@ func conworker(ctx context.Context, pipe stream.Pipe) {
 		case <-pipe.OnConnect:
 			fmt.Println("connected")
 
-		case ps := <-pipe.OnMessage:
-			route(ps)
-
 		case <-ctx.Done():
 			return
 		}
 	}
-
 }
 
 func chainWorker(ctx context.Context) {
@@ -73,7 +68,7 @@ func main() {
 
 	go conworker(ctx, smgr.Pipe)
 
-	startBlockchain()
+	startBlockchain(ctx, smgr)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)

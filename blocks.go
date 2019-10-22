@@ -2,13 +2,21 @@ package main
 
 import (
 	"bodychains/blockchain"
+	"bodychains/message"
 	"bodychains/nbody"
+	"bodychains/requests"
+	"bodychains/stream"
 	"bytes"
 	"encoding/gob"
 	"fmt"
 	"os"
 
+	"time"
+
+	"bodychains/connection"
+
 	"github.com/robaho/fixed"
+	"golang.org/x/net/context"
 )
 
 func fillChunks(chunks blockchain.Chunks, univ nbody.Universe, perChunk, count int64) {
@@ -28,7 +36,11 @@ func fillChunks(chunks blockchain.Chunks, univ nbody.Universe, perChunk, count i
 		// Serialize Chunk
 		buf.Reset()
 		enc := gob.NewEncoder(&buf)
-		enc.Encode(&group)
+
+		err := enc.Encode(&group)
+		if err != nil {
+			panic(err)
+		}
 
 		chunks[blockchain.ChunkKey{Index: i, Hash: chunkHash}] = buf.Bytes()
 	}
@@ -43,20 +55,41 @@ func fillUniverse(univ nbody.Universe, chunks blockchain.Chunks, perChunk, count
 
 		r := bytes.NewReader(v)
 		dec := gob.NewDecoder(r)
-		dec.Decode(&group)
+
+		err := dec.Decode(&group)
+		if err != nil {
+			panic(err)
+		}
 
 		copy(univ[begin:end], group[:])
 	}
 }
 
-func startBlockchain() {
+var listConns []*connection.Connection = []*connection.Connection{}
+
+func pollAll(smgr *stream.StreamsManager) {
+	for _, v := range listConns {
+		var chainHead requests.GetChainHead
+		err := requests.Run(&chainHead, message.GetChainHead, v)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(chainHead)
+	}
+}
+
+func startBlockchain(ctx context.Context, smgr *stream.StreamsManager) {
 	perChunk := int64(blockchain.BodiesMax / blockchain.ChunksTotal)
 	totalChunks := int64(blockchain.ChunksTotal)
 
 	univ := make(nbody.Universe, blockchain.BodiesMax)
 	chunks := make(blockchain.Chunks, blockchain.ChunksTotal)
 
-	dbFile := os.Args[1]
+	dbFile := "d0.db"
+	if len(os.Args) == 2 {
+		dbFile = os.Args[1]
+	}
+
 	bc := blockchain.NewBlockchain(dbFile)
 
 	head := bc.Iterator().Next()
@@ -89,6 +122,19 @@ func startBlockchain() {
 	)
 	bc.AddBlock(chunks)
 	head = bc.Iterator().Next()
+
+	go func() {
+		for {
+			fmt.Println("poll")
+			pollAll(smgr)
+
+			select {
+			case <-time.After(time.Second * 5):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	fmt.Println("PRINT!")
 }
